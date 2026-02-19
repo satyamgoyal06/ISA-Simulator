@@ -18,3 +18,7 @@ next-env.d.ts
 
 # debug
 npm-debug.log*
+
+# secrets
+supabase_password
+
