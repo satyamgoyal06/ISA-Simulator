@@ -2,6 +2,7 @@ import type { MCQQuestion, Subject, SubjectQuestionBank, SubjectiveQuestion } fr
 import { SUBJECTS } from "@/lib/types";
 import { OS_MCQ_QUESTIONS, OS_SUBJECTIVE_QUESTIONS } from "@/data/osQuestions";
 import { OS_CODE_QUESTIONS } from "@/data/osCodeQuestions";
+import { CN_QUESTIONS } from "@/data/cnQuestions";
 
 /* ── Placeholder generator for subjects without real data ── */
 
@@ -120,7 +121,7 @@ export const QUESTION_BANK: Record<Subject, SubjectQuestionBank> = {
     subjective: OS_SUBJECTIVE_QUESTIONS
   },
   MPCA: generateBank("MPCA"),
-  CN: generateBank("CN"),
+  CN: CN_QUESTIONS,
   LA: generateBank("LA"),
   DAA: generateBank("DAA")
 };

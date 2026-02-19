@@ -4,6 +4,7 @@ import AuthGate from "@/components/AuthGate";
 import TopBar from "@/components/TopBar";
 import { QUESTION_BANK, isValidSubject } from "@/data/questionBank";
 import { OS_THEORY } from "@/data/osTheory";
+import { CN_THEORY } from "@/data/cnTheory";
 import { buildTargetedMcqSet } from "@/lib/testEngine";
 import { supabase } from "@/lib/supabaseClient";
 import { recordResults, getWeakTopics } from "@/lib/userProfile";
@@ -67,8 +68,12 @@ function ReviewRunner({ subject }: { subject: Subject }) {
     }, [subject, bank.mcq]);
 
     const theoryForWeakTopics = useMemo(() => {
-        if (subject !== "OS") return [];
-        return OS_THEORY.filter((t) => weakTopicSlugs.includes(t.topicSlug));
+        if (subject === "OS") {
+            return OS_THEORY.filter((t) => weakTopicSlugs.includes(t.topicSlug));
+        } else if (subject === "CN") {
+            return CN_THEORY.filter((t) => weakTopicSlugs.includes(t.topicSlug));
+        }
+        return [];
     }, [subject, weakTopicSlugs]);
 
     function onSelect(questionId: string, optionIndex: number) {
@@ -267,6 +272,12 @@ function getAllTopicSlugs(subject: Subject): string[] {
             "threads",
             "synchronization",
             "deadlocks"
+        ];
+    } else if (subject === "CN") {
+        return [
+            "introduction",
+            "application-layer",
+            "transport-layer"
         ];
     }
     return [];
