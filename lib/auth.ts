@@ -1,77 +1,64 @@
-import type { User } from "@/lib/types";
+import { supabase } from "@/lib/supabaseClient";
 
-const USERS_KEY = "isa_users";
-const SESSION_KEY = "isa_session_user_id";
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+};
 
-function readUsers(): User[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
+export async function signUp(name: string, email: string, password: string): Promise<{ user?: AuthUser; error?: string }> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name } }
+  });
 
-  const raw = localStorage.getItem(USERS_KEY);
-  if (!raw) {
-    return [];
-  }
+  if (error) return { error: error.message };
+  if (!data.user) return { error: "Sign-up failed" };
 
-  try {
-    return JSON.parse(raw) as User[];
-  } catch {
-    return [];
-  }
-}
+  // Create profile row
+  await supabase.from("user_profiles").insert({
+    id: data.user.id,
+    name,
+    tests_completed: 0,
+    practice_sessions: 0
+  });
 
-function writeUsers(users: User[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-export function signup(payload: Pick<User, "name" | "email" | "password">): { ok: true } | { ok: false; message: string } {
-  const users = readUsers();
-  const exists = users.some((user) => user.email.toLowerCase() === payload.email.toLowerCase());
-
-  if (exists) {
-    return { ok: false, message: "Email already exists." };
-  }
-
-  const nextUser: User = {
-    id: crypto.randomUUID(),
-    name: payload.name,
-    email: payload.email,
-    password: payload.password
+  return {
+    user: {
+      id: data.user.id,
+      email: data.user.email ?? email,
+      name
+    }
   };
-
-  users.push(nextUser);
-  writeUsers(users);
-  localStorage.setItem(SESSION_KEY, nextUser.id);
-
-  return { ok: true };
 }
 
-export function login(payload: Pick<User, "email" | "password">): { ok: true } | { ok: false; message: string } {
-  const users = readUsers();
-  const user = users.find(
-    (candidate) =>
-      candidate.email.toLowerCase() === payload.email.toLowerCase() && candidate.password === payload.password
-  );
+export async function logIn(email: string, password: string): Promise<{ user?: AuthUser; error?: string }> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (!user) {
-    return { ok: false, message: "Invalid credentials." };
-  }
+  if (error) return { error: error.message };
+  if (!data.user) return { error: "Login failed" };
 
-  localStorage.setItem(SESSION_KEY, user.id);
-  return { ok: true };
+  return {
+    user: {
+      id: data.user.id,
+      email: data.user.email ?? email,
+      name: data.user.user_metadata?.name ?? email
+    }
+  };
 }
 
-export function logout() {
-  localStorage.removeItem(SESSION_KEY);
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    name: user.user_metadata?.name ?? user.email ?? ""
+  };
 }
 
-export function getCurrentUser(): User | null {
-  const users = readUsers();
-  const sessionId = localStorage.getItem(SESSION_KEY);
-
-  if (!sessionId) {
-    return null;
-  }
-
-  return users.find((user) => user.id === sessionId) ?? null;
+export async function logout(): Promise<void> {
+  await supabase.auth.signOut();
 }

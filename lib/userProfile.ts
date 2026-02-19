@@ -1,236 +1,212 @@
-import type {
-    MCQQuestion,
-    Subject,
-    SubjectProfile,
-    TestHistoryEntry,
-    TopicStats,
-    UserProfile
-} from "@/lib/types";
-
-const PROFILE_KEY = "isa_user_profiles";
-
-/* ── Persistence ──────────────────────────────────────── */
-
-function readAllProfiles(): Record<string, UserProfile> {
-    if (typeof window === "undefined") return {};
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return {};
-    try {
-        return JSON.parse(raw) as Record<string, UserProfile>;
-    } catch {
-        return {};
-    }
-}
-
-function writeAllProfiles(profiles: Record<string, UserProfile>) {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
-}
-
-/* ── Public API ───────────────────────────────────────── */
-
-export function getProfile(userId: string): UserProfile {
-    const all = readAllProfiles();
-    if (all[userId]) return all[userId];
-    return { userId, subjectStats: {} };
-}
-
-export function saveProfile(profile: UserProfile) {
-    const all = readAllProfiles();
-    all[profile.userId] = profile;
-    writeAllProfiles(all);
-}
-
-function ensureSubjectProfile(profile: UserProfile, subject: Subject): SubjectProfile {
-    if (!profile.subjectStats[subject]) {
-        profile.subjectStats[subject] = {
-            testsCompleted: 0,
-            practiceSessionsCompleted: 0,
-            topicStats: {},
-            history: []
-        };
-    }
-    return profile.subjectStats[subject]!;
-}
-
-function ensureTopicStats(sp: SubjectProfile, topicSlug: string): TopicStats {
-    if (!sp.topicStats[topicSlug]) {
-        sp.topicStats[topicSlug] = {
-            topicSlug,
-            totalAttempted: 0,
-            totalCorrect: 0,
-            recentWrongIds: [],
-            lastAttemptedAt: new Date().toISOString()
-        };
-    }
-    return sp.topicStats[topicSlug];
-}
+import { supabase } from "@/lib/supabaseClient";
+import type { MCQQuestion, Subject } from "@/lib/types";
 
 /* ── Record Results ───────────────────────────────────── */
 
-export function recordResults(
+export async function recordResults(
     userId: string,
     subject: Subject,
     mode: "test" | "practice" | "review",
     correctQuestions: MCQQuestion[],
     wrongQuestions: MCQQuestion[]
 ) {
-    const profile = getProfile(userId);
-    const sp = ensureSubjectProfile(profile, subject);
-
-    if (mode === "test") sp.testsCompleted += 1;
-    if (mode === "practice") sp.practiceSessionsCompleted += 1;
-
     const allQuestions = [...correctQuestions, ...wrongQuestions];
     const wrongIds = new Set(wrongQuestions.map((q) => q.id));
 
-    // Update per-topic stats
-    for (const q of allQuestions) {
-        const slug = q.topicSlug ?? q.topic;
-        const ts = ensureTopicStats(sp, slug);
-        ts.totalAttempted += 1;
-        if (!wrongIds.has(q.id)) {
-            ts.totalCorrect += 1;
-        } else {
-            ts.recentWrongIds = [q.id, ...ts.recentWrongIds].slice(0, 20);
+    // Update session counts
+    if (mode === "test") {
+        // Increment tests_completed
+        const { data: profile } = await supabase.from("user_profiles").select("tests_completed").eq("id", userId).single();
+        if (profile) {
+            await supabase.from("user_profiles").update({ tests_completed: (profile.tests_completed ?? 0) + 1 }).eq("id", userId);
         }
-        ts.lastAttemptedAt = new Date().toISOString();
     }
 
-    // Append history entry
-    const weakTopics = getWeakTopicsFromProfile(sp);
-    const entry: TestHistoryEntry = {
-        date: new Date().toISOString(),
-        score: correctQuestions.length,
-        totalQuestions: allQuestions.length,
-        weakTopics,
-        mode
-    };
-    sp.history.push(entry);
+    if (mode === "practice") {
+        const { data: profile } = await supabase.from("user_profiles").select("practice_sessions").eq("id", userId).single();
+        if (profile) {
+            await supabase.from("user_profiles").update({ practice_sessions: (profile.practice_sessions ?? 0) + 1 }).eq("id", userId);
+        }
+    }
 
-    saveProfile(profile);
-    return profile;
+    // Upsert per-topic stats
+    for (const q of allQuestions) {
+        const slug = q.topicSlug ?? q.topic;
+        const isCorrect = !wrongIds.has(q.id);
+
+        // Fetch existing
+        const { data: existing } = await supabase
+            .from("topic_stats")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("subject", subject)
+            .eq("topic_slug", slug)
+            .maybeSingle();
+
+        if (existing) {
+            const recentWrong = isCorrect
+                ? existing.recent_wrong_ids ?? []
+                : [q.id, ...(existing.recent_wrong_ids ?? [])].slice(0, 20);
+
+            await supabase
+                .from("topic_stats")
+                .update({
+                    total_attempted: (existing.total_attempted ?? 0) + 1,
+                    total_correct: (existing.total_correct ?? 0) + (isCorrect ? 1 : 0),
+                    recent_wrong_ids: recentWrong,
+                    last_attempted_at: new Date().toISOString()
+                })
+                .eq("id", existing.id);
+        } else {
+            await supabase.from("topic_stats").insert({
+                user_id: userId,
+                subject,
+                topic_slug: slug,
+                total_attempted: 1,
+                total_correct: isCorrect ? 1 : 0,
+                recent_wrong_ids: isCorrect ? [] : [q.id],
+                last_attempted_at: new Date().toISOString()
+            });
+        }
+    }
+
+    // Insert history entry
+    const weakTopics = await getWeakTopics(userId, subject);
+    await supabase.from("test_history").insert({
+        user_id: userId,
+        subject,
+        mode,
+        score: correctQuestions.length,
+        total_questions: allQuestions.length,
+        weak_topics: weakTopics
+    });
 }
 
 /* ── Analytics ────────────────────────────────────────── */
 
-function getWeakTopicsFromProfile(sp: SubjectProfile, threshold = 0.6): string[] {
-    const weak: string[] = [];
-    for (const [slug, ts] of Object.entries(sp.topicStats)) {
-        if (ts.totalAttempted >= 3) {
-            const accuracy = ts.totalCorrect / ts.totalAttempted;
-            if (accuracy < threshold) {
-                weak.push(slug);
-            }
-        }
-    }
-    return weak;
+export async function getWeakTopics(userId: string, subject: Subject, threshold = 0.6): Promise<string[]> {
+    const { data } = await supabase
+        .from("topic_stats")
+        .select("topic_slug, total_attempted, total_correct")
+        .eq("user_id", userId)
+        .eq("subject", subject);
+
+    if (!data) return [];
+
+    return data
+        .filter((ts) => ts.total_attempted >= 3 && ts.total_correct / ts.total_attempted < threshold)
+        .map((ts) => ts.topic_slug);
 }
 
-export function getWeakTopics(userId: string, subject: Subject, threshold = 0.6): string[] {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return [];
-    return getWeakTopicsFromProfile(sp, threshold);
+export async function getStrongTopics(userId: string, subject: Subject, threshold = 0.8): Promise<string[]> {
+    const { data } = await supabase
+        .from("topic_stats")
+        .select("topic_slug, total_attempted, total_correct")
+        .eq("user_id", userId)
+        .eq("subject", subject);
+
+    if (!data) return [];
+
+    return data
+        .filter((ts) => ts.total_attempted >= 3 && ts.total_correct / ts.total_attempted >= threshold)
+        .map((ts) => ts.topic_slug);
 }
 
-export function getStrongTopics(userId: string, subject: Subject, threshold = 0.8): string[] {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return [];
-    const strong: string[] = [];
-    for (const [slug, ts] of Object.entries(sp.topicStats)) {
-        if (ts.totalAttempted >= 3) {
-            const accuracy = ts.totalCorrect / ts.totalAttempted;
-            if (accuracy >= threshold) {
-                strong.push(slug);
-            }
-        }
-    }
-    return strong;
-}
+export async function getTopicAccuracy(
+    userId: string,
+    subject: Subject
+): Promise<Record<string, { accuracy: number; attempted: number; correct: number }>> {
+    const { data } = await supabase
+        .from("topic_stats")
+        .select("topic_slug, total_attempted, total_correct")
+        .eq("user_id", userId)
+        .eq("subject", subject);
 
-export function getTopicAccuracy(userId: string, subject: Subject): Record<string, { accuracy: number; attempted: number; correct: number }> {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return {};
+    if (!data) return {};
+
     const result: Record<string, { accuracy: number; attempted: number; correct: number }> = {};
-    for (const [slug, ts] of Object.entries(sp.topicStats)) {
-        result[slug] = {
-            accuracy: ts.totalAttempted > 0 ? ts.totalCorrect / ts.totalAttempted : 0,
-            attempted: ts.totalAttempted,
-            correct: ts.totalCorrect
+    for (const ts of data) {
+        result[ts.topic_slug] = {
+            accuracy: ts.total_attempted > 0 ? ts.total_correct / ts.total_attempted : 0,
+            attempted: ts.total_attempted,
+            correct: ts.total_correct
         };
     }
     return result;
 }
 
-export function getOverallAccuracy(userId: string, subject: Subject): number {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return 0;
+export async function getOverallAccuracy(userId: string, subject: Subject): Promise<number> {
+    const { data } = await supabase
+        .from("topic_stats")
+        .select("total_attempted, total_correct")
+        .eq("user_id", userId)
+        .eq("subject", subject);
+
+    if (!data) return 0;
+
     let totalAttempted = 0;
     let totalCorrect = 0;
-    for (const ts of Object.values(sp.topicStats)) {
-        totalAttempted += ts.totalAttempted;
-        totalCorrect += ts.totalCorrect;
+    for (const ts of data) {
+        totalAttempted += ts.total_attempted;
+        totalCorrect += ts.total_correct;
     }
     return totalAttempted > 0 ? totalCorrect / totalAttempted : 0;
 }
 
-export function getProgressHistory(userId: string, subject: Subject): TestHistoryEntry[] {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return [];
-    return sp.history;
+export async function getProgressHistory(
+    userId: string,
+    subject: Subject
+): Promise<{ date: string; score: number; totalQuestions: number; mode: string }[]> {
+    const { data } = await supabase
+        .from("test_history")
+        .select("created_at, score, total_questions, mode")
+        .eq("user_id", userId)
+        .eq("subject", subject)
+        .order("created_at", { ascending: true });
+
+    if (!data) return [];
+
+    return data.map((row) => ({
+        date: row.created_at,
+        score: row.score,
+        totalQuestions: row.total_questions,
+        mode: row.mode
+    }));
 }
 
-export function getRecommendations(userId: string, subject: Subject): string[] {
-    const profile = getProfile(userId);
-    const sp = profile.subjectStats[subject];
-    if (!sp) return ["Take your first test to get personalized recommendations."];
+export async function getRecommendations(userId: string, subject: Subject): Promise<string[]> {
+    const [weakTopics, strongTopics, history] = await Promise.all([
+        getWeakTopics(userId, subject),
+        getStrongTopics(userId, subject),
+        getProgressHistory(userId, subject)
+    ]);
 
     const recs: string[] = [];
-    const weakTopics = getWeakTopicsFromProfile(sp);
-    const strongTopics: string[] = [];
-    const improving: string[] = [];
-
-    for (const [slug, ts] of Object.entries(sp.topicStats)) {
-        const accuracy = ts.totalAttempted > 0 ? ts.totalCorrect / ts.totalAttempted : 0;
-        if (accuracy >= 0.8 && ts.totalAttempted >= 5) {
-            strongTopics.push(slug);
-        }
-    }
-
-    // Check for improvement trends in history
-    if (sp.history.length >= 2) {
-        const recent = sp.history.slice(-3);
-        const older = sp.history.slice(-6, -3);
-        if (recent.length > 0 && older.length > 0) {
-            const recentAvg = recent.reduce((s, e) => s + e.score / e.totalQuestions, 0) / recent.length;
-            const olderAvg = older.reduce((s, e) => s + e.score / e.totalQuestions, 0) / older.length;
-            if (recentAvg > olderAvg + 0.05) {
-                improving.push("overall");
-            }
-        }
-    }
 
     if (weakTopics.length > 0) {
-        const topicNames = weakTopics.map((t) => formatTopicName(t));
-        recs.push(`Focus on: ${topicNames.join(", ")} — these are below 60% accuracy.`);
+        recs.push(`Focus on: ${weakTopics.map(formatTopicName).join(", ")} — these are below 60% accuracy.`);
     }
 
     if (strongTopics.length > 0) {
-        recs.push(`Great work on: ${strongTopics.map((t) => formatTopicName(t)).join(", ")} — keep it up!`);
+        recs.push(`Great work on: ${strongTopics.map(formatTopicName).join(", ")} — keep it up!`);
     }
 
-    if (improving.length > 0) {
-        recs.push("Your recent scores are improving — maintaining consistency will solidify your understanding.");
+    // Check improvement
+    if (history.length >= 6) {
+        const recent = history.slice(-3);
+        const older = history.slice(-6, -3);
+        const recentAvg = recent.reduce((s, e) => s + e.score / e.totalQuestions, 0) / recent.length;
+        const olderAvg = older.reduce((s, e) => s + e.score / e.totalQuestions, 0) / older.length;
+        if (recentAvg > olderAvg + 0.05) {
+            recs.push("Your recent scores are improving — maintaining consistency will solidify your understanding.");
+        }
     }
 
-    if (sp.testsCompleted === 0) {
+    const testCount = history.filter((h) => h.mode === "test").length;
+    if (testCount === 0) {
         recs.push("Take a full test to get a comprehensive assessment of your knowledge.");
-    } else if (sp.testsCompleted < 3) {
-        recs.push(`You've taken ${sp.testsCompleted} test(s). Take more tests to build a reliable profile.`);
+    } else if (testCount < 3) {
+        recs.push(`You've taken ${testCount} test(s). Take more tests to build a reliable profile.`);
     }
 
     if (recs.length === 0) {
@@ -241,8 +217,5 @@ export function getRecommendations(userId: string, subject: Subject): string[] {
 }
 
 function formatTopicName(slug: string): string {
-    return slug
-        .split("-")
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
+    return slug.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }

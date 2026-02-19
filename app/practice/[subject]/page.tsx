@@ -4,7 +4,7 @@ import AuthGate from "@/components/AuthGate";
 import TopBar from "@/components/TopBar";
 import { QUESTION_BANK, isValidSubject } from "@/data/questionBank";
 import type { MCQQuestion, Subject } from "@/lib/types";
-import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { recordResults } from "@/lib/userProfile";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -72,11 +72,13 @@ function PracticeRunner({ subject }: { subject: Subject }) {
     setChecked(false);
   }
 
-  function endSession() {
+  async function endSession() {
     // Record to profile
-    const user = getCurrentUser();
-    if (user && stats.total > 0) {
-      recordResults(user.id, subject, "practice", correctQuestions, wrongQuestions);
+    if (stats.total > 0) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await recordResults(user.id, subject, "practice", correctQuestions, wrongQuestions);
+      }
     }
     setSessionEnded(true);
     window.scrollTo({ top: 0, behavior: "smooth" });

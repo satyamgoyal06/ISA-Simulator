@@ -1,31 +1,32 @@
 "use client";
 
-import { getCurrentUser, logout } from "@/lib/auth";
-import type { User } from "@/lib/types";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function TopBar() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const [name, setName] = useState<string | null>(null);
 
   useEffect(() => {
-    setUser(getCurrentUser());
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setName(user.user_metadata?.name ?? user.email ?? "User");
+      }
+    });
   }, []);
 
-  function onLogout() {
-    logout();
+  async function handleLogout() {
+    await supabase.auth.signOut();
     router.replace("/login");
   }
 
   return (
-    <header className="topbar">
-      <p>
-        Signed in as <strong>{user?.name ?? "User"}</strong>
-      </p>
-      <button className="btn btn-small btn-secondary" onClick={onLogout} type="button">
+    <div className="topbar">
+      <p>{name ? `Logged in as ${name}` : ""}</p>
+      <button className="btn btn-small btn-ghost" type="button" onClick={handleLogout}>
         Logout
       </button>
-    </header>
+    </div>
   );
 }

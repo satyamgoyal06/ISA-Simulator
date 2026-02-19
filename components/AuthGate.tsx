@@ -1,6 +1,6 @@
 "use client";
 
-import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -13,12 +13,21 @@ export default function AuthGate({ children }: AuthGateProps) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const user = getCurrentUser();
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    setReady(true);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      setReady(true);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [router]);
 
   if (!ready) {

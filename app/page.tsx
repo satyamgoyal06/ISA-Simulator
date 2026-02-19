@@ -63,7 +63,7 @@ export default function HomePage() {
           <TechCard
             icon="📊"
             title="User Profiling System"
-            desc="Persistent localStorage profiles track accuracy, history, and progress per topic. Generates personalized recommendations."
+            desc="Persistent cloud profiles (Supabase) track accuracy, history, and progress per topic. Generates personalized recommendations."
           />
           <TechCard
             icon="🤖"

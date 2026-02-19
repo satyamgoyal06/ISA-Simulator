@@ -3,7 +3,7 @@
 import AuthGate from "@/components/AuthGate";
 import TopBar from "@/components/TopBar";
 import { SUBJECTS } from "@/lib/types";
-import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import {
   getOverallAccuracy,
   getWeakTopics,
@@ -38,22 +38,26 @@ function DashboardContent() {
   const [data, setData] = useState<Partial<Record<Subject, DashboardData>>>({});
 
   useEffect(() => {
-    const user = getCurrentUser();
-    if (!user) return;
-    setUserId(user.id);
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
 
-    const d: Partial<Record<Subject, DashboardData>> = {};
-    for (const subject of SUBJECTS) {
-      d[subject] = {
-        accuracy: getOverallAccuracy(user.id, subject),
-        weakTopics: getWeakTopics(user.id, subject),
-        strongTopics: getStrongTopics(user.id, subject),
-        recommendations: getRecommendations(user.id, subject),
-        history: getProgressHistory(user.id, subject),
-        topicAccuracy: getTopicAccuracy(user.id, subject)
-      };
+      const d: Partial<Record<Subject, DashboardData>> = {};
+      for (const subject of SUBJECTS) {
+        const [accuracy, weakTopics, strongTopics, recommendations, history, topicAcc] = await Promise.all([
+          getOverallAccuracy(user.id, subject),
+          getWeakTopics(user.id, subject),
+          getStrongTopics(user.id, subject),
+          getRecommendations(user.id, subject),
+          getProgressHistory(user.id, subject),
+          getTopicAccuracy(user.id, subject)
+        ]);
+        d[subject] = { accuracy, weakTopics, strongTopics, recommendations, history, topicAccuracy: topicAcc };
+      }
+      setData(d);
     }
-    setData(d);
+    loadData();
   }, []);
 
   return (
@@ -61,14 +65,10 @@ function DashboardContent() {
       <section className="card wide-card">
         <TopBar />
         <h1>Dashboard</h1>
-        <p>
-          Choose a subject to take a test, practice MCQs, or review weak topics.
-        </p>
+        <p>Choose a subject to take a test, practice MCQs, or review weak topics.</p>
 
-        {/* Quick Stats */}
         {userId ? <QuickStats data={data} /> : null}
 
-        {/* Subject Grid */}
         <div className="subject-grid">
           {SUBJECTS.map((subject) => {
             const sd = data[subject];
@@ -78,7 +78,7 @@ function DashboardContent() {
 
             return (
               <article className="subject-card" key={subject}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="row subject-card-header">
                   <h2>{subject}</h2>
                   {hasData ? (
                     <span className={`accuracy-badge ${accuracyPct >= 70 ? "badge-good" : accuracyPct >= 50 ? "badge-ok" : "badge-weak"}`}>
@@ -91,9 +91,7 @@ function DashboardContent() {
                   <div className="subject-stats">
                     <p>{sd.history.length} session(s) completed</p>
                     {weakCount > 0 ? (
-                      <p className="weak-indicator">
-                        ⚠ {weakCount} weak topic{weakCount > 1 ? "s" : ""}
-                      </p>
+                      <p className="weak-indicator">⚠ {weakCount} weak topic{weakCount > 1 ? "s" : ""}</p>
                     ) : null}
                   </div>
                 ) : (
@@ -101,30 +99,19 @@ function DashboardContent() {
                 )}
 
                 <div className="row">
-                  <Link className="btn" href={`/test/${subject}`}>
-                    Take Test
-                  </Link>
-                  <Link className="btn btn-secondary" href={`/practice/${subject}`}>
-                    Practice
-                  </Link>
-                  <Link className="btn btn-ghost" href={`/review/${subject}`}>
-                    Review
-                  </Link>
+                  <Link className="btn" href={`/test/${subject}`}>Take Test</Link>
+                  <Link className="btn btn-secondary" href={`/practice/${subject}`}>Practice</Link>
+                  <Link className="btn btn-ghost" href={`/review/${subject}`}>Review</Link>
                 </div>
               </article>
             );
           })}
         </div>
 
-        {/* Recommendations for OS (the subject with real data) */}
         {userId && data.OS ? <RecommendationsSection subject="OS" sd={data.OS} /> : null}
-
-        {/* Topic Breakdown for OS */}
         {userId && data.OS && Object.keys(data.OS.topicAccuracy).length > 0 ? (
           <TopicBreakdown subject="OS" topicAccuracy={data.OS.topicAccuracy} />
         ) : null}
-
-        {/* Progress Chart for OS */}
         {userId && data.OS && data.OS.history.length > 0 ? (
           <ProgressChart history={data.OS.history} subject="OS" />
         ) : null}
@@ -132,8 +119,6 @@ function DashboardContent() {
     </main>
   );
 }
-
-/* ── Quick Stats ──────────────────────────────────────── */
 
 function QuickStats({ data }: { data: Partial<Record<Subject, DashboardData>> }) {
   let total = 0;
@@ -147,7 +132,6 @@ function QuickStats({ data }: { data: Partial<Record<Subject, DashboardData>> })
       sessions += 1;
     }
   }
-
   if (sessions === 0) return null;
 
   return (
@@ -168,34 +152,18 @@ function QuickStats({ data }: { data: Partial<Record<Subject, DashboardData>> })
   );
 }
 
-/* ── Recommendations ──────────────────────────────────── */
-
 function RecommendationsSection({ subject, sd }: { subject: string; sd: DashboardData }) {
   if (sd.recommendations.length === 0) return null;
-
   return (
     <section className="recs-section">
       <h2>💡 Recommendations — {subject}</h2>
-      <ul>
-        {sd.recommendations.map((rec, i) => (
-          <li key={i}>{rec}</li>
-        ))}
-      </ul>
+      <ul>{sd.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}</ul>
     </section>
   );
 }
 
-/* ── Topic Breakdown ──────────────────────────────────── */
-
-function TopicBreakdown({
-  subject,
-  topicAccuracy
-}: {
-  subject: string;
-  topicAccuracy: Record<string, { accuracy: number; attempted: number; correct: number }>;
-}) {
+function TopicBreakdown({ subject, topicAccuracy }: { subject: string; topicAccuracy: Record<string, { accuracy: number; attempted: number; correct: number }> }) {
   const sorted = Object.entries(topicAccuracy).sort((a, b) => a[1].accuracy - b[1].accuracy);
-
   return (
     <section className="topic-breakdown">
       <h2>📊 Topic Breakdown — {subject}</h2>
@@ -206,10 +174,7 @@ function TopicBreakdown({
             <div className="topic-row" key={slug}>
               <span className="topic-name">{formatSlug(slug)}</span>
               <div className="bar-container">
-                <div
-                  className={`bar-fill ${pct >= 70 ? "bar-good" : pct >= 50 ? "bar-ok" : "bar-weak"}`}
-                  style={{ width: `${Math.max(pct, 3)}%` }}
-                />
+                <div className={`bar-fill ${pct >= 70 ? "bar-good" : pct >= 50 ? "bar-ok" : "bar-weak"}`} style={{ width: `${Math.max(pct, 3)}%` }} />
               </div>
               <span className="topic-pct">{pct}%</span>
               <span className="topic-count">({stats.correct}/{stats.attempted})</span>
@@ -221,18 +186,8 @@ function TopicBreakdown({
   );
 }
 
-/* ── Progress Chart (CSS-based) ───────────────────────── */
-
-function ProgressChart({
-  history,
-  subject
-}: {
-  history: { date: string; score: number; totalQuestions: number }[];
-  subject: string;
-}) {
+function ProgressChart({ history, subject }: { history: { date: string; score: number; totalQuestions: number }[]; subject: string }) {
   const lastN = history.slice(-10);
-  const maxQ = Math.max(...lastN.map((e) => e.totalQuestions), 1);
-
   return (
     <section className="progress-section">
       <h2>📈 Progress — {subject}</h2>
@@ -255,11 +210,6 @@ function ProgressChart({
   );
 }
 
-/* ── Helpers ──────────────────────────────────────────── */
-
 function formatSlug(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  return slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }

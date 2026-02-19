@@ -5,7 +5,7 @@ import TopBar from "@/components/TopBar";
 import { QUESTION_BANK, isValidSubject } from "@/data/questionBank";
 import { OS_THEORY } from "@/data/osTheory";
 import { buildTargetedMcqSet } from "@/lib/testEngine";
-import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { recordResults, getWeakTopics } from "@/lib/userProfile";
 import type { MCQQuestion, Subject, TheoryContent } from "@/lib/types";
 import Link from "next/link";
@@ -48,18 +48,22 @@ function ReviewRunner({ subject }: { subject: Subject }) {
     const [excludeIds, setExcludeIds] = useState<string[]>([]);
 
     useEffect(() => {
-        const user = getCurrentUser();
-        if (!user) return;
-        setUserId(user.id);
-        const weak = getWeakTopics(user.id, subject);
-        setWeakTopicSlugs(weak.length > 0 ? weak : getAllTopicSlugs(subject));
-        const qs = buildTargetedMcqSet({
-            allMcqQuestions: bank.mcq,
-            weakTopicSlugs: weak.length > 0 ? weak : getAllTopicSlugs(subject),
-            totalQuestions: 10
-        });
-        setQuestions(qs);
-        setExcludeIds(qs.map((q) => q.id));
+        async function load() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            setUserId(user.id);
+            const weak = await getWeakTopics(user.id, subject);
+            const slugs = weak.length > 0 ? weak : getAllTopicSlugs(subject);
+            setWeakTopicSlugs(slugs);
+            const qs = buildTargetedMcqSet({
+                allMcqQuestions: bank.mcq,
+                weakTopicSlugs: slugs,
+                totalQuestions: 10
+            });
+            setQuestions(qs);
+            setExcludeIds(qs.map((q) => q.id));
+        }
+        load();
     }, [subject, bank.mcq]);
 
     const theoryForWeakTopics = useMemo(() => {
@@ -72,7 +76,7 @@ function ReviewRunner({ subject }: { subject: Subject }) {
         setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
     }
 
-    function onSubmit() {
+    async function onSubmit() {
         setSubmitted(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -80,9 +84,9 @@ function ReviewRunner({ subject }: { subject: Subject }) {
 
         const correct = questions.filter((q) => answers[q.id] === q.correctOptionIndex);
         const wrong = questions.filter((q) => answers[q.id] !== q.correctOptionIndex);
-        recordResults(userId, subject, "review", correct, wrong);
+        await recordResults(userId, subject, "review", correct, wrong);
 
-        const newWeak = getWeakTopics(userId, subject);
+        const newWeak = await getWeakTopics(userId, subject);
         setWeakTopicSlugs(newWeak.length > 0 ? newWeak : getAllTopicSlugs(subject));
     }
 

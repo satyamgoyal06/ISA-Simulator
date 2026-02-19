@@ -3,27 +3,33 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { login } from "@/lib/auth";
+import { logIn } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError("");
+    setLoading(true);
+
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "").trim();
 
     if (!email || !password) {
       setError("All fields are required.");
+      setLoading(false);
       return;
     }
 
-    const result = login({ email, password });
+    const result = await logIn(email, password);
 
-    if (!result.ok) {
-      setError(result.message);
+    if (result.error) {
+      setError(result.error);
+      setLoading(false);
       return;
     }
 
@@ -44,8 +50,8 @@ export default function LoginPage() {
             <input type="password" name="password" />
           </label>
           {error ? <p className="error">{error}</p> : null}
-          <button className="btn" type="submit">
-            Login
+          <button className="btn" type="submit" disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
         <p>

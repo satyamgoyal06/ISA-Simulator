@@ -11,7 +11,7 @@ import {
   extractWeakTopics,
   gradeSubmission
 } from "@/lib/testEngine";
-import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { recordResults } from "@/lib/userProfile";
 import type { MCQQuestion, Subject, TheoryContent } from "@/lib/types";
 import Link from "next/link";
@@ -147,12 +147,13 @@ function TestRunner({ subject }: { subject: Subject }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     // Record to user profile
-    const user = getCurrentUser();
-    if (user) {
-      const correctMcq = mcqQuestions.filter((q) => mcqAnswers[q.id] === q.correctOptionIndex);
-      const wrongMcq = mcqQuestions.filter((q) => mcqAnswers[q.id] !== q.correctOptionIndex);
-      recordResults(user.id, subject, "test", correctMcq, wrongMcq);
-    }
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        const correctMcq = mcqQuestions.filter((q) => mcqAnswers[q.id] === q.correctOptionIndex);
+        const wrongMcq = mcqQuestions.filter((q) => mcqAnswers[q.id] !== q.correctOptionIndex);
+        recordResults(user.id, subject, "test", correctMcq, wrongMcq);
+      }
+    });
   }
 
   function onSelectMcq(questionId: string, optionIndex: number) {
