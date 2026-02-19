@@ -802,4 +802,240 @@ input:not([type="radio"]):focus {
   .quick-stats {
     grid-template-columns: 1fr 1fr;
   }
+
+  .steps-grid,
+  .tech-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-stats {
+    gap: 1rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Home Page Specific Styles
+   ═══════════════════════════════════════════════════════ */
+
+.home-page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.hero-desc {
+  color: var(--text-muted);
+  max-width: 620px;
+  margin: 0 auto;
+  line-height: 1.75;
+  font-size: 1.05rem;
+}
+
+.hero-buttons {
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.hero-stats {
+  justify-content: center;
+  gap: 2.5rem;
+  margin-top: 0.5rem;
+}
+
+.hero-stat {
+  text-align: center;
+}
+
+.hero-stat-value {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #c084fc, #8b5cf6, #6366f1);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-stat-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* ── Section Title ────────────────────────────────────── */
+
+.info-section {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.section-title {
+  font-size: 1.3rem;
+  text-align: center;
+  background: linear-gradient(135deg, #c084fc, #8b5cf6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Steps Grid (How It Works) ────────────────────────── */
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.step-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  display: grid;
+  gap: 0.5rem;
+  transition: all var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.step-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), #6366f1);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.step-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px var(--accent-glow);
+}
+
+.step-card:hover::before {
+  opacity: 1;
+}
+
+.step-number {
+  font-size: 2rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(99, 102, 241, 0.15));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+}
+
+.step-card h3 {
+  font-size: 1rem;
+}
+
+.step-card p {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+/* ── Tech Grid ────────────────────────────────────────── */
+
+.tech-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.tech-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+  transition: all var(--transition);
+}
+
+.tech-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--accent-glow);
+}
+
+.tech-icon {
+  font-size: 1.6rem;
+}
+
+.tech-card h3 {
+  font-size: 0.95rem;
+}
+
+.tech-card p {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+/* ── Features Grid ────────────────────────────────────── */
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.6rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: all var(--transition);
+  border: 1px solid transparent;
+}
+
+.feature-item:hover {
+  background: var(--accent-soft);
+  border-color: var(--glass-border);
+  color: var(--text);
+}
+
+.feature-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* ── Footer ───────────────────────────────────────────── */
+
+.site-footer {
+  text-align: center;
+  padding: 2rem 1rem 2.5rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.footer-github {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: color var(--transition);
+}
+
+.footer-github:hover {
+  color: var(--accent);
+}
+
+.footer-credit {
+  font-size: 1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #c084fc, #8b5cf6, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.02em;
 }
