@@ -16,14 +16,6 @@ export async function signUp(name: string, email: string, password: string): Pro
   if (error) return { error: error.message };
   if (!data.user) return { error: "Sign-up failed" };
 
-  // Create profile row
-  await supabase.from("user_profiles").insert({
-    id: data.user.id,
-    name,
-    tests_completed: 0,
-    practice_sessions: 0
-  });
-
   return {
     user: {
       id: data.user.id,
